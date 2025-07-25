@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Web Page Change Tracker",
+  "version": "1.0",
+  "description": "Monitors a selected area of a web page for changes and provides an audio alert.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tts"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
