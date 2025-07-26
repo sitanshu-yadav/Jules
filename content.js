@@ -129,7 +129,7 @@ function processStream(request, sendResponse) {
     });
 }
 
-function compareImages(request, sendResponse) {
+async function compareImages(request, sendResponse) {
     const { newImageData, width, height, selectedArea, trackFullPage } = request;
     const newImageDataArray = new Uint8ClampedArray(newImageData);
     const newCanvas = new OffscreenCanvas(width, height);
@@ -137,20 +137,31 @@ function compareImages(request, sendResponse) {
     newContext.putImageData(new ImageData(newImageDataArray, width, height), 0, 0);
 
     if (trackFullPage) {
-        chrome.storage.local.get(['fullPageImageData'], (result) => {
-            const hasChanged = result.fullPageImageData && result.fullPageImageData !== newCanvas.transferToImageBitmap();
-            chrome.storage.local.set({ fullPageImageData: newCanvas.transferToImageBitmap() });
-            sendResponse({ hasChanged, newImageData: newCanvas.transferToImageBitmap() });
+        const newHash = await hashImage(newCanvas);
+        chrome.storage.local.get(['fullPageImageHash'], (result) => {
+            const hasChanged = result.fullPageImageHash && result.fullPageImageHash !== newHash;
+            chrome.storage.local.set({ fullPageImageHash: newHash });
+            sendResponse({ hasChanged });
         });
     } else {
         const newSelectedCanvas = new OffscreenCanvas(selectedArea.rect.width, selectedArea.rect.height);
         const newSelectedContext = newSelectedCanvas.getContext('2d');
         newSelectedContext.drawImage(newCanvas, selectedArea.rect.left, selectedArea.rect.top, selectedArea.rect.width, selectedArea.rect.height, 0, 0, selectedArea.rect.width, selectedArea.rect.height);
-        const newSelectedImageData = newSelectedCanvas.transferToImageBitmap();
+        const newHash = await hashImage(newSelectedCanvas);
 
         chrome.storage.local.get(['selectedArea'], (result) => {
-            const hasChanged = result.selectedArea && result.selectedArea.imageData && result.selectedArea.imageData !== newSelectedImageData;
-            sendResponse({ hasChanged, newImageData: newSelectedImageData });
+            const hasChanged = result.selectedArea && result.selectedArea.hash && result.selectedArea.hash !== newHash;
+            chrome.storage.local.set({ selectedArea: { ...result.selectedArea, hash: newHash } });
+            sendResponse({ hasChanged });
         });
     }
+}
+
+async function hashImage(canvas) {
+    const blob = await canvas.convertToBlob();
+    const arrayBuffer = await blob.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
 }
