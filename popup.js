@@ -60,27 +60,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const tabId = tabs[0].id;
-        chrome.desktopCapture.chooseDesktopMedia(['tab'], (streamId) => {
-            if (streamId) {
-                chrome.storage.local.set({ alertPhrase, interval, isTracking: true, trackFullPage, tabId, streamId }, () => {
-                    chrome.runtime.sendMessage({ action: 'startTracking' }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            console.error(chrome.runtime.lastError.message);
-                            // Handle the error, e.g., by alerting the user
-                            alert('An error occurred while starting tracking. Please make sure an area is selected if not tracking full page.');
-                            chrome.storage.local.set({ isTracking: false });
-                        } else if (response && response.status === 'tracking started') {
-                            startTrackingButton.disabled = true;
-                            stopTrackingButton.disabled = false;
-                            selectAreaButton.disabled = true;
-                            trackFullPageCheckbox.disabled = true;
-                        } else {
-                            alert('Please select an area to track first or check "Track Full Page".');
-                            chrome.storage.local.set({ isTracking: false });
-                        }
-                    });
-                });
-            }
+        chrome.storage.local.set({ alertPhrase, interval, isTracking: true, trackFullPage, tabId }, () => {
+            chrome.runtime.sendMessage({ action: 'startTracking' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error(chrome.runtime.lastError.message);
+                    // Handle the error, e.g., by alerting the user
+                    alert('An error occurred while starting tracking. Please make sure an area is selected if not tracking full page.');
+                    chrome.storage.local.set({ isTracking: false });
+                } else if (response && response.status === 'tracking started') {
+                    startTrackingButton.disabled = true;
+                    stopTrackingButton.disabled = false;
+                    selectAreaButton.disabled = true;
+                    trackFullPageCheckbox.disabled = true;
+                } else {
+                    alert('Please select an area to track first or check "Track Full Page".');
+                    chrome.storage.local.set({ isTracking: false });
+                }
+            });
         });
     });
   });
