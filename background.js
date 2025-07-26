@@ -40,53 +40,70 @@ function stopTracking() {
 }
 
 function checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId) {
-    chrome.desktopCapture.chooseDesktopMedia(['tab'], (streamId) => {
-        if (streamId) {
-            const mediaStream = new MediaStream([
-                new MediaStreamTrackGenerator({ kind: 'video' }),
-            ]);
-            const video = document.createElement('video');
-            video.srcObject = mediaStream;
-            video.onloadedmetadata = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                const context = canvas.getContext('2d');
-                context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const newImageData = canvas.toDataURL();
-
-                try {
-                    chrome.tabs.sendMessage(tabId, {
-                        action: 'compareImages',
-                        newImageData,
-                        selectedArea,
-                        trackFullPage
-                    }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            console.error(chrome.runtime.lastError.message);
-                            return;
-                        }
-
-                        if (response && response.hasChanged) {
-                            chrome.tts.speak(alertPhrase);
-                            if (trackFullPage) {
-                                chrome.storage.local.set({ fullPageImageData: response.newImageData });
-                            } else {
-                                chrome.storage.local.set({
-                                    selectedArea: {
-                                        ...selectedArea,
-                                        imageData: response.newImageData
-                                    }
-                                });
-                            }
-                        }
-                    });
-                } catch (error) {
-                    console.error(error);
-                }
-            };
-        } else {
+    chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError) {
+            console.error(chrome.runtime.lastError.message);
             stopTracking();
+            return;
         }
+        chrome.desktopCapture.chooseDesktopMedia(['tab'], (streamId) => {
+            if (streamId) {
+                const video = document.createElement('video');
+                navigator.mediaDevices.getUserMedia({
+                    video: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: streamId
+                        }
+                    }
+                }).then((stream) => {
+                    video.srcObject = stream;
+                    video.onloadedmetadata = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        const context = canvas.getContext('2d');
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const newImageData = canvas.toDataURL();
+
+                        try {
+                            chrome.tabs.sendMessage(tabId, {
+                                action: 'compareImages',
+                                newImageData,
+                                selectedArea,
+                                trackFullPage
+                            }, (response) => {
+                                if (chrome.runtime.lastError) {
+                                    console.error(chrome.runtime.lastError.message);
+                                    return;
+                                }
+
+                                if (response && response.hasChanged) {
+                                    chrome.tts.speak(alertPhrase);
+                                    if (trackFullPage) {
+                                        chrome.storage.local.set({ fullPageImageData: response.newImageData });
+                                    } else {
+                                        chrome.storage.local.set({
+                                            selectedArea: {
+                                                ...selectedArea,
+                                                imageData: response.newImageData
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        } catch (error) {
+                            console.error(error);
+                        }
+                        stream.getTracks().forEach(track => track.stop());
+                    };
+                }).catch((err) => {
+                    console.error(err);
+                    stopTracking();
+                });
+            } else {
+                stopTracking();
+            }
+        });
     });
 }
