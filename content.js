@@ -11,6 +11,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'compareImages') {
     compareImages(request, sendResponse);
     return true; // Indicates that the response is sent asynchronously
+  } else if (request.action === 'processStream') {
+    processStream(request, sendResponse);
+    return true;
   }
 });
 
@@ -90,6 +93,40 @@ function endSelection(e) {
             }
         });
     }
+}
+
+function processStream(request, sendResponse) {
+    const { streamId, selectedArea, trackFullPage } = request;
+    navigator.mediaDevices.getUserMedia({
+        video: {
+            mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: streamId
+            }
+        }
+    }).then((stream) => {
+        const track = stream.getVideoTracks()[0];
+        const imageCapture = new ImageCapture(track);
+        imageCapture.grabFrame().then((imageBitmap) => {
+            const canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
+            const context = canvas.getContext('2d');
+            context.drawImage(imageBitmap, 0, 0);
+            const newImageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+
+            compareImages({
+                newImageData: newImageData.data.buffer,
+                width: newImageData.width,
+                height: newImageData.height,
+                selectedArea,
+                trackFullPage
+            }, sendResponse);
+            track.stop();
+        }).catch((err) => {
+            console.error(err);
+        });
+    }).catch((err) => {
+        console.error(err);
+    });
 }
 
 function compareImages(request, sendResponse) {
