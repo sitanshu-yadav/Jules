@@ -21,7 +21,7 @@ function startSelection(e) {
   selectionBox.style.position = 'fixed';
   selectionBox.style.border = '2px dashed #00f';
   selectionBox.style.backgroundColor = 'rgba(0, 0, 255, 0.1)';
-  selectionBox.style.zIndex = '999999';
+  selectionBox.style.zIndex = '2147483647';
   selectionBox.style.left = startX + 'px';
   selectionBox.style.top = startY + 'px';
 
