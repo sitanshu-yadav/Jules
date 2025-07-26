@@ -1,5 +1,7 @@
-let selectionBox = null;
-let startX, startY;
+if (typeof selectionBox === 'undefined') {
+    let selectionBox = null;
+    let startX, startY;
+}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'selectArea') {
