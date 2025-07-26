@@ -48,47 +48,41 @@ function endSelection(e) {
     document.removeEventListener('mouseup', endSelection);
 
     if (selectionBox) {
-      const rect = selectionBox.getBoundingClientRect();
-      document.body.removeChild(selectionBox);
-      selectionBox = null;
+        const rect = selectionBox.getBoundingClientRect();
+        document.body.removeChild(selectionBox);
+        selectionBox = null;
 
-      const scrollX = window.scrollX;
-      const scrollY = window.scrollY;
+        const scrollX = window.scrollX;
+        const scrollY = window.scrollY;
 
-      const absoluteRect = {
-        top: rect.top + scrollY,
-        left: rect.left + scrollX,
-        width: rect.width,
-        height: rect.height,
-        right: rect.right + scrollX,
-        bottom: rect.bottom + scrollY
-      };
+        const absoluteRect = {
+            top: rect.top + scrollY,
+            left: rect.left + scrollX,
+            width: rect.width,
+            height: rect.height,
+            right: rect.right + scrollX,
+            bottom: rect.bottom + scrollY
+        };
 
-      // Get the content of the selected area
-      const selectedContent = getSelectedContent(absoluteRect);
-
-      chrome.storage.local.set({
-        selectedArea: {
-          rect: absoluteRect,
-          content: selectedContent
-        }
-      });
+        chrome.runtime.sendMessage({ action: 'captureVisibleTab' }, (response) => {
+            if (response.imageData) {
+                const image = new Image();
+                image.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = absoluteRect.width;
+                    canvas.height = absoluteRect.height;
+                    const context = canvas.getContext('2d');
+                    context.drawImage(image, absoluteRect.left, absoluteRect.top, absoluteRect.width, absoluteRect.height, 0, 0, absoluteRect.width, absoluteRect.height);
+                    const selectedImageData = canvas.toDataURL();
+                    chrome.storage.local.set({
+                        selectedArea: {
+                            rect: absoluteRect,
+                            imageData: selectedImageData
+                        }
+                    });
+                };
+                image.src = response.imageData;
+            }
+        });
     }
-  }
-
-  function getSelectedContent(rect) {
-    const elements = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    let content = '';
-    for (const element of elements) {
-      const elementRect = element.getBoundingClientRect();
-      if (
-        elementRect.top >= rect.top &&
-        elementRect.left >= rect.left &&
-        elementRect.bottom <= rect.bottom &&
-        elementRect.right <= rect.right
-      ) {
-        content += element.innerText || '';
-      }
-    }
-    return content.trim();
-  }
+}

@@ -1,12 +1,13 @@
 document.addEventListener('DOMContentLoaded', () => {
   const selectAreaButton = document.getElementById('select-area');
+  const trackFullPageCheckbox = document.getElementById('track-full-page');
   const startTrackingButton = document.getElementById('start-tracking');
   const stopTrackingButton = document.getElementById('stop-tracking');
   const alertPhraseInput = document.getElementById('alert-phrase');
   const intervalInput = document.getElementById('interval');
 
   // Load saved settings
-  chrome.storage.local.get(['alertPhrase', 'interval', 'isTracking'], (result) => {
+  chrome.storage.local.get(['alertPhrase', 'interval', 'isTracking', 'trackFullPage'], (result) => {
     if (result.alertPhrase) {
       alertPhraseInput.value = result.alertPhrase;
     }
@@ -17,7 +18,17 @@ document.addEventListener('DOMContentLoaded', () => {
       startTrackingButton.disabled = true;
       stopTrackingButton.disabled = false;
       selectAreaButton.disabled = true;
+      trackFullPageCheckbox.disabled = true;
     }
+    if (result.trackFullPage) {
+      trackFullPageCheckbox.checked = true;
+      selectAreaButton.disabled = true;
+    }
+  });
+
+  trackFullPageCheckbox.addEventListener('change', () => {
+    selectAreaButton.disabled = trackFullPageCheckbox.checked;
+    chrome.storage.local.set({ trackFullPage: trackFullPageCheckbox.checked });
   });
 
   selectAreaButton.addEventListener('click', () => {
@@ -45,19 +56,22 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    chrome.storage.local.set({ alertPhrase, interval, isTracking: true }, () => {
+    const trackFullPage = trackFullPageCheckbox.checked;
+
+    chrome.storage.local.set({ alertPhrase, interval, isTracking: true, trackFullPage }, () => {
         chrome.runtime.sendMessage({ action: 'startTracking' }, (response) => {
             if (chrome.runtime.lastError) {
                 console.error(chrome.runtime.lastError.message);
                 // Handle the error, e.g., by alerting the user
-                alert('An error occurred while starting tracking. Please make sure an area is selected.');
+                alert('An error occurred while starting tracking. Please make sure an area is selected if not tracking full page.');
                 chrome.storage.local.set({ isTracking: false });
             } else if (response && response.status === 'tracking started') {
                 startTrackingButton.disabled = true;
                 stopTrackingButton.disabled = false;
                 selectAreaButton.disabled = true;
+                trackFullPageCheckbox.disabled = true;
             } else {
-                alert('Please select an area to track first.');
+                alert('Please select an area to track first or check "Track Full Page".');
                 chrome.storage.local.set({ isTracking: false });
             }
         });
@@ -70,7 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.set({ isTracking: false }, () => {
           startTrackingButton.disabled = false;
           stopTrackingButton.disabled = true;
-          selectAreaButton.disabled = false;
+          selectAreaButton.disabled = trackFullPageCheckbox.checked;
+          trackFullPageCheckbox.disabled = false;
         });
       }
     });

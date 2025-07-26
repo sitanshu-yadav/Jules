@@ -1,10 +1,15 @@
 let trackingIntervalId = null;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'startTracking') {
-    chrome.storage.local.get(['selectedArea', 'interval', 'alertPhrase'], (result) => {
-        if (result.selectedArea && result.interval && result.alertPhrase) {
-            startTracking(result.selectedArea, result.interval, result.alertPhrase);
+  if (request.action === 'captureVisibleTab') {
+    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (imageData) => {
+      sendResponse({ imageData: imageData });
+    });
+    return true;
+  } else if (request.action === 'startTracking') {
+    chrome.storage.local.get(['selectedArea', 'interval', 'alertPhrase', 'trackFullPage'], (result) => {
+        if ((result.selectedArea || result.trackFullPage) && result.interval && result.alertPhrase) {
+            startTracking(result.selectedArea, result.interval, result.alertPhrase, result.trackFullPage);
             sendResponse({ status: 'tracking started' });
         } else {
             sendResponse({ status: 'missing data' });
@@ -17,66 +22,53 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-function startTracking(selectedArea, interval, alertPhrase) {
-  if (trackingIntervalId) {
-    clearInterval(trackingIntervalId);
-  }
+function startTracking(selectedArea, interval, alertPhrase, trackFullPage) {
+    if (trackingIntervalId) {
+        clearInterval(trackingIntervalId);
+    }
 
-  trackingIntervalId = setInterval(() => {
-    checkforChanges(selectedArea, alertPhrase);
-  }, interval * 1000);
+    trackingIntervalId = setInterval(() => {
+        checkForChanges(selectedArea, alertPhrase, trackFullPage);
+    }, interval * 1000);
 }
 
 function stopTracking() {
-  if (trackingIntervalId) {
-    clearInterval(trackingIntervalId);
-    trackingIntervalId = null;
-  }
+    if (trackingIntervalId) {
+        clearInterval(trackingIntervalId);
+        trackingIntervalId = null;
+    }
 }
 
-function checkforChanges(selectedArea, alertPhrase) {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs.length === 0) {
-            return;
-        }
-        const tabId = tabs[0].id;
-        chrome.scripting.executeScript({
-            target: { tabId: tabId },
-            func: getPageContent,
-            args: [selectedArea.rect]
-        }, (injectionResults) => {
-            if (chrome.runtime.lastError || !injectionResults || !injectionResults[0]) {
-                // Handle error
-                return;
-            }
+function checkForChanges(selectedArea, alertPhrase, trackFullPage) {
+    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (newImageData) => {
+        if (trackFullPage) {
+            chrome.storage.local.get(['fullPageImageData'], (result) => {
+                if (result.fullPageImageData && result.fullPageImageData !== newImageData) {
+                    chrome.tts.speak(alertPhrase);
+                }
+                chrome.storage.local.set({ fullPageImageData: newImageData });
+            });
+        } else {
+            const image = new Image();
+            image.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = selectedArea.rect.width;
+                canvas.height = selectedArea.rect.height;
+                const context = canvas.getContext('2d');
+                context.drawImage(image, selectedArea.rect.left, selectedArea.rect.top, selectedArea.rect.width, selectedArea.rect.height, 0, 0, selectedArea.rect.width, selectedArea.rect.height);
+                const newSelectedImageData = canvas.toDataURL();
 
-            const newContent = injectionResults[0].result;
-            if (newContent && newContent.trim() !== selectedArea.content.trim()) {
-                chrome.tts.speak(alertPhrase);
+                if (selectedArea.imageData && selectedArea.imageData !== newSelectedImageData) {
+                    chrome.tts.speak(alertPhrase);
+                }
                 chrome.storage.local.set({
                     selectedArea: {
                         ...selectedArea,
-                        content: newContent
+                        imageData: newSelectedImageData
                     }
                 });
-            }
-        });
+            };
+            image.src = newImageData;
+        }
     });
-}
-
-function getPageContent(rect) {
-    const elements = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    let content = '';
-    for (const element of elements) {
-      const elementRect = element.getBoundingClientRect();
-      if (
-        elementRect.top >= rect.top &&
-        elementRect.left >= rect.left &&
-        elementRect.bottom <= rect.bottom &&
-        elementRect.right <= rect.right
-      ) {
-        content += element.innerText || '';
-      }
-    }
-    return content.trim();
 }
