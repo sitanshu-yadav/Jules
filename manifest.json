@@ -8,7 +8,8 @@
     "activeTab",
     "scripting",
     "tts",
-    "declarativeContent"
+    "declarativeContent",
+    "desktopCapture"
   ],
   "background": {
     "service_worker": "background.js"

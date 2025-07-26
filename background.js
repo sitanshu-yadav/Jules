@@ -40,61 +40,51 @@ function stopTracking() {
 }
 
 function checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId) {
-    chrome.tabs.query({ active: true, currentWindow: true }, (activeTabs) => {
-        const originalTabId = activeTabs.length > 0 ? activeTabs[0].id : null;
+    chrome.desktopCapture.chooseDesktopMedia(['tab'], (streamId) => {
+        if (streamId) {
+            const mediaStream = new MediaStream([
+                new MediaStreamTrackGenerator({ kind: 'video' }),
+            ]);
+            const video = document.createElement('video');
+            video.srcObject = mediaStream;
+            video.onloadedmetadata = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const context = canvas.getContext('2d');
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const newImageData = canvas.toDataURL();
 
-        chrome.tabs.update(tabId, { active: true }, () => {
-            chrome.tabs.get(tabId, (tab) => {
-                if (chrome.runtime.lastError) {
-                    console.error(chrome.runtime.lastError.message);
-                    stopTracking();
-                    return;
-                }
-                if (tab.status === 'complete') {
-                    chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }, (newImageData) => {
-                        if (originalTabId) {
-                            chrome.tabs.update(originalTabId, { active: true });
-                        }
+                try {
+                    chrome.tabs.sendMessage(tabId, {
+                        action: 'compareImages',
+                        newImageData,
+                        selectedArea,
+                        trackFullPage
+                    }, (response) => {
                         if (chrome.runtime.lastError) {
                             console.error(chrome.runtime.lastError.message);
                             return;
                         }
-                        try {
-                            chrome.tabs.sendMessage(tabId, {
-                                action: 'compareImages',
-                                newImageData,
-                                selectedArea,
-                                trackFullPage
-                            }, (response) => {
-                                if (chrome.runtime.lastError) {
-                                    console.error(chrome.runtime.lastError.message);
-                                    return;
-                                }
 
-                                if (response && response.hasChanged) {
-                                    chrome.tts.speak(alertPhrase);
-                                    if (trackFullPage) {
-                                        chrome.storage.local.set({ fullPageImageData: response.newImageData });
-                                    } else {
-                                        chrome.storage.local.set({
-                                            selectedArea: {
-                                                ...selectedArea,
-                                                imageData: response.newImageData
-                                            }
-                                        });
+                        if (response && response.hasChanged) {
+                            chrome.tts.speak(alertPhrase);
+                            if (trackFullPage) {
+                                chrome.storage.local.set({ fullPageImageData: response.newImageData });
+                            } else {
+                                chrome.storage.local.set({
+                                    selectedArea: {
+                                        ...selectedArea,
+                                        imageData: response.newImageData
                                     }
-                                }
-                            });
-                        } catch (error) {
-                            console.error(error);
+                                });
+                            }
                         }
                     });
-                } else {
-                    if (originalTabId) {
-                        chrome.tabs.update(originalTabId, { active: true });
-                    }
+                } catch (error) {
+                    console.error(error);
                 }
-            });
-        });
+            };
+        }
     });
 }
