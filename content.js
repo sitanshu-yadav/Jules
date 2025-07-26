@@ -1,19 +1,11 @@
-if (typeof selectionBox === 'undefined') {
-    let selectionBox = null;
-    let startX, startY;
-}
+let selectionBox = null;
+let startX, startY;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'selectArea') {
     document.body.style.cursor = 'crosshair';
     document.addEventListener('mousedown', startSelection);
     document.addEventListener('mouseup', endSelection);
-  } else if (request.action === 'compareImages') {
-    compareImages(request, sendResponse);
-    return true; // Indicates that the response is sent asynchronously
-  } else if (request.action === 'processStream') {
-    processStream(request, sendResponse);
-    return true;
   }
 });
 
@@ -56,116 +48,47 @@ function endSelection(e) {
     document.removeEventListener('mouseup', endSelection);
 
     if (selectionBox) {
-        const rect = selectionBox.getBoundingClientRect();
-        document.body.removeChild(selectionBox);
-        selectionBox = null;
+      const rect = selectionBox.getBoundingClientRect();
+      document.body.removeChild(selectionBox);
+      selectionBox = null;
 
-        const scrollX = window.scrollX;
-        const scrollY = window.scrollY;
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
 
-        const absoluteRect = {
-            top: rect.top + scrollY,
-            left: rect.left + scrollX,
-            width: rect.width,
-            height: rect.height,
-            right: rect.right + scrollX,
-            bottom: rect.bottom + scrollY
-        };
+      const absoluteRect = {
+        top: rect.top + scrollY,
+        left: rect.left + scrollX,
+        width: rect.width,
+        height: rect.height,
+        right: rect.right + scrollX,
+        bottom: rect.bottom + scrollY
+      };
 
-        chrome.runtime.sendMessage({ action: 'captureVisibleTab' }, (response) => {
-            if (response.imageData) {
-                const image = new Image();
-                image.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = absoluteRect.width;
-                    canvas.height = absoluteRect.height;
-                    const context = canvas.getContext('2d');
-                    context.drawImage(image, absoluteRect.left, absoluteRect.top, absoluteRect.width, absoluteRect.height, 0, 0, absoluteRect.width, absoluteRect.height);
-                    const selectedImageData = canvas.toDataURL();
-                    chrome.storage.local.set({
-                        selectedArea: {
-                            rect: absoluteRect,
-                            imageData: selectedImageData
-                        }
-                    });
-                };
-                image.src = response.imageData;
-            }
-        });
-    }
-}
+      // Get the content of the selected area
+      const selectedContent = getSelectedContent(absoluteRect);
 
-function processStream(request, sendResponse) {
-    const { streamId, selectedArea, trackFullPage } = request;
-    navigator.mediaDevices.getUserMedia({
-        video: {
-            mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: streamId
-            }
+      chrome.storage.local.set({
+        selectedArea: {
+          rect: absoluteRect,
+          content: selectedContent
         }
-    }).then((stream) => {
-        const track = stream.getVideoTracks()[0];
-        const imageCapture = new ImageCapture(track);
-        imageCapture.grabFrame().then((imageBitmap) => {
-            const canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
-            const context = canvas.getContext('2d');
-            context.drawImage(imageBitmap, 0, 0);
-            const newImageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
-
-            compareImages({
-                newImageData: newImageData.data.buffer,
-                width: newImageData.width,
-                height: newImageData.height,
-                selectedArea,
-                trackFullPage
-            }, sendResponse);
-            track.stop();
-        }).catch((err) => {
-            console.error(err);
-        });
-    }).catch((err) => {
-        console.error(err);
-    });
-}
-
-function compareImages(request, sendResponse) {
-    const { newImageData, width, height, selectedArea, trackFullPage } = request;
-    const newImageDataArray = new Uint8ClampedArray(newImageData);
-
-    if (trackFullPage) {
-        chrome.storage.local.get(['fullPageImageData'], (result) => {
-            const oldImageData = result.fullPageImageData ? new Uint8ClampedArray(result.fullPageImageData) : null;
-            const hasChanged = oldImageData && !areImagesEqual(oldImageData, newImageDataArray);
-            chrome.storage.local.set({ fullPageImageData: newImageDataArray.buffer });
-            sendResponse({ hasChanged });
-        });
-    } else {
-        const newSelectedCanvas = new OffscreenCanvas(selectedArea.rect.width, selectedArea.rect.height);
-        const newSelectedContext = newSelectedCanvas.getContext('2d');
-        const newCanvas = new OffscreenCanvas(width, height);
-        const newContext = newCanvas.getContext('2d');
-        newContext.putImageData(new ImageData(newImageDataArray, width, height), 0, 0);
-        newSelectedContext.drawImage(newCanvas, selectedArea.rect.left, selectedArea.rect.top, selectedArea.rect.width, selectedArea.rect.height, 0, 0, selectedArea.rect.width, selectedArea.rect.height);
-        const newSelectedImageData = newSelectedContext.getImageData(0, 0, newSelectedCanvas.width, newSelectedCanvas.height).data;
-
-        chrome.storage.local.get(['selectedArea'], (result) => {
-            const oldImageData = result.selectedArea && result.selectedArea.imageData ? new Uint8ClampedArray(result.selectedArea.imageData) : null;
-            const hasChanged = oldImageData && !areImagesEqual(oldImageData, newSelectedImageData);
-            chrome.storage.local.set({ selectedArea: { ...result.selectedArea, imageData: newSelectedImageData.buffer } });
-            sendResponse({ hasChanged });
-        });
+      });
     }
-}
+  }
 
-function areImagesEqual(image1, image2) {
-    if (image1.length !== image2.length) {
-        return false;
+  function getSelectedContent(rect) {
+    const elements = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    let content = '';
+    for (const element of elements) {
+      const elementRect = element.getBoundingClientRect();
+      if (
+        elementRect.top >= rect.top &&
+        elementRect.left >= rect.left &&
+        elementRect.bottom <= rect.bottom &&
+        elementRect.right <= rect.right
+      ) {
+        content += element.innerText || '';
+      }
     }
-    for (let i = 0; i < image1.length; i++) {
-        if (image1[i] !== image2[i]) {
-            return false;
-        }
-    }
-    return true;
-}
+    return content.trim();
+  }

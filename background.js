@@ -1,15 +1,10 @@
 let trackingIntervalId = null;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'captureVisibleTab') {
-    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (imageData) => {
-      sendResponse({ imageData: imageData });
-    });
-    return true;
-  } else if (request.action === 'startTracking') {
-    chrome.storage.local.get(['selectedArea', 'interval', 'alertPhrase', 'trackFullPage', 'tabId', 'streamId'], (result) => {
-        if ((result.selectedArea || result.trackFullPage) && result.interval && result.alertPhrase && result.tabId && result.streamId) {
-            startTracking(result.selectedArea, result.interval, result.alertPhrase, result.trackFullPage, result.tabId, result.streamId);
+  if (request.action === 'startTracking') {
+    chrome.storage.local.get(['selectedArea', 'interval', 'alertPhrase', 'trackFullPage', 'tabId'], (result) => {
+        if ((result.selectedArea || result.trackFullPage) && result.interval && result.alertPhrase && result.tabId) {
+            startTracking(result.selectedArea, result.interval, result.alertPhrase, result.trackFullPage, result.tabId);
             sendResponse({ status: 'tracking started' });
         } else {
             sendResponse({ status: 'missing data' });
@@ -22,13 +17,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-function startTracking(selectedArea, interval, alertPhrase, trackFullPage, tabId, streamId) {
+function startTracking(selectedArea, interval, alertPhrase, trackFullPage, tabId) {
     if (trackingIntervalId) {
         clearInterval(trackingIntervalId);
     }
 
     trackingIntervalId = setInterval(() => {
-        checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId, streamId);
+        checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId);
     }, interval * 1000);
 }
 
@@ -39,34 +34,65 @@ function stopTracking() {
     }
 }
 
-function checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId, streamId) {
-    try {
-        chrome.tabs.sendMessage(tabId, {
-            action: 'processStream',
-            streamId,
-            selectedArea,
-            trackFullPage
-        }, (response) => {
-            if (chrome.runtime.lastError) {
-                console.error(chrome.runtime.lastError.message);
-                return;
-            }
-
-            if (response && response.hasChanged) {
-                chrome.tts.speak(alertPhrase);
-                if (trackFullPage) {
-                    chrome.storage.local.set({ fullPageImageData: response.newImageData });
-                } else {
-                    chrome.storage.local.set({
-                        selectedArea: {
-                            ...selectedArea,
-                            imageData: response.newImageData
-                        }
-                    });
+function checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId) {
+    chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError) {
+            console.error(chrome.runtime.lastError.message);
+            stopTracking();
+            return;
+        }
+        if (tab.status === 'complete') {
+            chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: getPageContent,
+                args: [selectedArea ? selectedArea.rect : null, trackFullPage]
+            }, (injectionResults) => {
+                if (chrome.runtime.lastError || !injectionResults || !injectionResults[0]) {
+                    // Handle error
+                    return;
                 }
-            }
-        });
-    } catch (error) {
-        console.error(error);
+
+                const newContent = injectionResults[0].result;
+                if (trackFullPage) {
+                    chrome.storage.local.get(['fullPageContent'], (result) => {
+                        if (result.fullPageContent && result.fullPageContent !== newContent) {
+                            chrome.tts.speak(alertPhrase);
+                        }
+                        chrome.storage.local.set({ fullPageContent: newContent });
+                    });
+                } else {
+                    if (selectedArea && newContent.trim() !== selectedArea.content.trim()) {
+                        chrome.tts.speak(alertPhrase);
+                        chrome.storage.local.set({
+                            selectedArea: {
+                                ...selectedArea,
+                                content: newContent
+                            }
+                        });
+                    }
+                }
+            });
+        }
+    });
+}
+
+function getPageContent(rect, trackFullPage) {
+    if (trackFullPage) {
+        return document.body.innerText;
     }
+
+    const elements = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    let content = '';
+    for (const element of elements) {
+      const elementRect = element.getBoundingClientRect();
+      if (
+        elementRect.top >= rect.top &&
+        elementRect.left >= rect.left &&
+        elementRect.bottom <= rect.bottom &&
+        elementRect.right <= rect.right
+      ) {
+        content += element.innerText || '';
+      }
+    }
+    return content.trim();
 }
