@@ -40,51 +40,69 @@ function stopTracking() {
 }
 
 function checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId) {
-    chrome.desktopCapture.chooseDesktopMedia(['tab'], (streamId) => {
-        if (streamId) {
-            const mediaStream = new MediaStream([
-                new MediaStreamTrackGenerator({ kind: 'video' }),
-            ]);
-            const video = document.createElement('video');
-            video.srcObject = mediaStream;
-            video.onloadedmetadata = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                const context = canvas.getContext('2d');
-                context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const newImageData = canvas.toDataURL();
+    chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError) {
+            console.error(chrome.runtime.lastError.message);
+            stopTracking();
+            return;
+        }
 
-                try {
-                    chrome.tabs.sendMessage(tabId, {
-                        action: 'compareImages',
-                        newImageData,
-                        selectedArea,
-                        trackFullPage
-                    }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            console.error(chrome.runtime.lastError.message);
-                            return;
-                        }
-
-                        if (response && response.hasChanged) {
-                            chrome.tts.speak(alertPhrase);
-                            if (trackFullPage) {
-                                chrome.storage.local.set({ fullPageImageData: response.newImageData });
-                            } else {
-                                chrome.storage.local.set({
-                                    selectedArea: {
-                                        ...selectedArea,
-                                        imageData: response.newImageData
-                                    }
-                                });
+        if (tab.active) {
+            captureAndCompare(tabId, selectedArea, alertPhrase, trackFullPage);
+        } else {
+            chrome.tabs.update(tabId, { active: true }, () => {
+                setTimeout(() => {
+                    captureAndCompare(tabId, selectedArea, alertPhrase, trackFullPage, () => {
+                        chrome.tabs.query({ active: true, currentWindow: true }, (activeTabs) => {
+                            if (activeTabs.length > 0 && activeTabs[0].id !== tabId) {
+                                chrome.tabs.update(activeTabs[0].id, { active: true });
                             }
-                        }
+                        });
                     });
-                } catch (error) {
-                    console.error(error);
+                }, 100);
+            });
+        }
+    });
+}
+
+function captureAndCompare(tabId, selectedArea, alertPhrase, trackFullPage, callback) {
+    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (newImageData) => {
+        if (chrome.runtime.lastError) {
+            console.error(chrome.runtime.lastError.message);
+            if (callback) callback();
+            return;
+        }
+        try {
+            chrome.tabs.sendMessage(tabId, {
+                action: 'compareImages',
+                newImageData,
+                selectedArea,
+                trackFullPage
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error(chrome.runtime.lastError.message);
+                    if (callback) callback();
+                    return;
                 }
-            };
+
+                if (response && response.hasChanged) {
+                    chrome.tts.speak(alertPhrase);
+                    if (trackFullPage) {
+                        chrome.storage.local.set({ fullPageImageData: response.newImageData });
+                    } else {
+                        chrome.storage.local.set({
+                            selectedArea: {
+                                ...selectedArea,
+                                imageData: response.newImageData
+                            }
+                        });
+                    }
+                }
+                if (callback) callback();
+            });
+        } catch (error) {
+            console.error(error);
+            if (callback) callback();
         }
     });
 }
