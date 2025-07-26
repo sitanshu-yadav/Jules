@@ -58,10 +58,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const trackFullPage = trackFullPageCheckbox.checked;
 
-    chrome.storage.local.set({ alertPhrase, interval, isTracking: true, trackFullPage }, () => {
-        chrome.runtime.sendMessage({ action: 'startTracking' }, (response) => {
-            if (chrome.runtime.lastError) {
-                console.error(chrome.runtime.lastError.message);
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0].id;
+        chrome.storage.local.set({ alertPhrase, interval, isTracking: true, trackFullPage, tabId }, () => {
+            chrome.runtime.sendMessage({ action: 'startTracking' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error(chrome.runtime.lastError.message);
                 // Handle the error, e.g., by alerting the user
                 alert('An error occurred while starting tracking. Please make sure an area is selected if not tracking full page.');
                 chrome.storage.local.set({ isTracking: false });
@@ -75,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 chrome.storage.local.set({ isTracking: false });
             }
         });
+    });
     });
   });
 

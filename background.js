@@ -7,9 +7,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   } else if (request.action === 'startTracking') {
-    chrome.storage.local.get(['selectedArea', 'interval', 'alertPhrase', 'trackFullPage'], (result) => {
-        if ((result.selectedArea || result.trackFullPage) && result.interval && result.alertPhrase) {
-            startTracking(result.selectedArea, result.interval, result.alertPhrase, result.trackFullPage);
+    chrome.storage.local.get(['selectedArea', 'interval', 'alertPhrase', 'trackFullPage', 'tabId'], (result) => {
+        if ((result.selectedArea || result.trackFullPage) && result.interval && result.alertPhrase && result.tabId) {
+            startTracking(result.selectedArea, result.interval, result.alertPhrase, result.trackFullPage, result.tabId);
             sendResponse({ status: 'tracking started' });
         } else {
             sendResponse({ status: 'missing data' });
@@ -22,13 +22,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-function startTracking(selectedArea, interval, alertPhrase, trackFullPage) {
+function startTracking(selectedArea, interval, alertPhrase, trackFullPage, tabId) {
     if (trackingIntervalId) {
         clearInterval(trackingIntervalId);
     }
 
     trackingIntervalId = setInterval(() => {
-        checkForChanges(selectedArea, alertPhrase, trackFullPage);
+        checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId);
     }, interval * 1000);
 }
 
@@ -39,11 +39,15 @@ function stopTracking() {
     }
 }
 
-function checkForChanges(selectedArea, alertPhrase, trackFullPage) {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs.length > 0 && tabs[0].status === 'complete') {
-            const tabId = tabs[0].id;
-            chrome.tabs.captureVisibleTab(null, { format: 'png' }, (newImageData) => {
+function checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId) {
+    chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError) {
+            console.error(chrome.runtime.lastError.message);
+            stopTracking();
+            return;
+        }
+        if (tab.status === 'complete') {
+            chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }, (newImageData) => {
                 if (chrome.runtime.lastError) {
                     console.error(chrome.runtime.lastError.message);
                     return;
