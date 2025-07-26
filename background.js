@@ -41,34 +41,37 @@ function stopTracking() {
 
 function checkForChanges(selectedArea, alertPhrase, trackFullPage) {
     chrome.tabs.captureVisibleTab(null, { format: 'png' }, (newImageData) => {
-        if (trackFullPage) {
-            chrome.storage.local.get(['fullPageImageData'], (result) => {
-                if (result.fullPageImageData && result.fullPageImageData !== newImageData) {
-                    chrome.tts.speak(alertPhrase);
-                }
-                chrome.storage.local.set({ fullPageImageData: newImageData });
-            });
-        } else {
-            const image = new Image();
-            image.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = selectedArea.rect.width;
-                canvas.height = selectedArea.rect.height;
-                const context = canvas.getContext('2d');
-                context.drawImage(image, selectedArea.rect.left, selectedArea.rect.top, selectedArea.rect.width, selectedArea.rect.height, 0, 0, selectedArea.rect.width, selectedArea.rect.height);
-                const newSelectedImageData = canvas.toDataURL();
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs.length === 0) {
+                return;
+            }
+            const tabId = tabs[0].id;
 
-                if (selectedArea.imageData && selectedArea.imageData !== newSelectedImageData) {
-                    chrome.tts.speak(alertPhrase);
+            chrome.tabs.sendMessage(tabId, {
+                action: 'compareImages',
+                newImageData,
+                selectedArea,
+                trackFullPage
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error(chrome.runtime.lastError.message);
+                    return;
                 }
-                chrome.storage.local.set({
-                    selectedArea: {
-                        ...selectedArea,
-                        imageData: newSelectedImageData
+
+                if (response && response.hasChanged) {
+                    chrome.tts.speak(alertPhrase);
+                    if (trackFullPage) {
+                        chrome.storage.local.set({ fullPageImageData: response.newImageData });
+                    } else {
+                        chrome.storage.local.set({
+                            selectedArea: {
+                                ...selectedArea,
+                                imageData: response.newImageData
+                            }
+                        });
                     }
-                });
-            };
-            image.src = newImageData;
-        }
+                }
+            });
+        });
     });
 }

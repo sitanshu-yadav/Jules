@@ -6,6 +6,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     document.body.style.cursor = 'crosshair';
     document.addEventListener('mousedown', startSelection);
     document.addEventListener('mouseup', endSelection);
+  } else if (request.action === 'compareImages') {
+    compareImages(request, sendResponse);
+    return true; // Indicates that the response is sent asynchronously
   }
 });
 
@@ -84,5 +87,31 @@ function endSelection(e) {
                 image.src = response.imageData;
             }
         });
+    }
+}
+
+function compareImages(request, sendResponse) {
+    const { newImageData, selectedArea, trackFullPage } = request;
+
+    if (trackFullPage) {
+        chrome.storage.local.get(['fullPageImageData'], (result) => {
+            const hasChanged = result.fullPageImageData && result.fullPageImageData !== newImageData;
+            chrome.storage.local.set({ fullPageImageData: newImageData });
+            sendResponse({ hasChanged, newImageData });
+        });
+    } else {
+        const image = new Image();
+        image.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = selectedArea.rect.width;
+            canvas.height = selectedArea.rect.height;
+            const context = canvas.getContext('2d');
+            context.drawImage(image, selectedArea.rect.left, selectedArea.rect.top, selectedArea.rect.width, selectedArea.rect.height, 0, 0, selectedArea.rect.width, selectedArea.rect.height);
+            const newSelectedImageData = canvas.toDataURL();
+
+            const hasChanged = selectedArea.imageData && selectedArea.imageData !== newSelectedImageData;
+            sendResponse({ hasChanged, newImageData: newSelectedImageData });
+        };
+        image.src = newImageData;
     }
 }
