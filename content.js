@@ -93,27 +93,27 @@ function endSelection(e) {
 }
 
 function compareImages(request, sendResponse) {
-    const { newImageData, selectedArea, trackFullPage } = request;
+    const { newImageData, width, height, selectedArea, trackFullPage } = request;
+    const newImageDataArray = new Uint8ClampedArray(newImageData);
+    const newCanvas = new OffscreenCanvas(width, height);
+    const newContext = newCanvas.getContext('2d');
+    newContext.putImageData(new ImageData(newImageDataArray, width, height), 0, 0);
 
     if (trackFullPage) {
         chrome.storage.local.get(['fullPageImageData'], (result) => {
-            const hasChanged = result.fullPageImageData && result.fullPageImageData !== newImageData;
-            chrome.storage.local.set({ fullPageImageData: newImageData });
-            sendResponse({ hasChanged, newImageData });
+            const hasChanged = result.fullPageImageData && result.fullPageImageData !== newCanvas.transferToImageBitmap();
+            chrome.storage.local.set({ fullPageImageData: newCanvas.transferToImageBitmap() });
+            sendResponse({ hasChanged, newImageData: newCanvas.transferToImageBitmap() });
         });
     } else {
-        const image = new Image();
-        image.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = selectedArea.rect.width;
-            canvas.height = selectedArea.rect.height;
-            const context = canvas.getContext('2d');
-            context.drawImage(image, selectedArea.rect.left, selectedArea.rect.top, selectedArea.rect.width, selectedArea.rect.height, 0, 0, selectedArea.rect.width, selectedArea.rect.height);
-            const newSelectedImageData = canvas.toDataURL();
+        const newSelectedCanvas = new OffscreenCanvas(selectedArea.rect.width, selectedArea.rect.height);
+        const newSelectedContext = newSelectedCanvas.getContext('2d');
+        newSelectedContext.drawImage(newCanvas, selectedArea.rect.left, selectedArea.rect.top, selectedArea.rect.width, selectedArea.rect.height, 0, 0, selectedArea.rect.width, selectedArea.rect.height);
+        const newSelectedImageData = newSelectedCanvas.transferToImageBitmap();
 
-            const hasChanged = selectedArea.imageData && selectedArea.imageData !== newSelectedImageData;
+        chrome.storage.local.get(['selectedArea'], (result) => {
+            const hasChanged = result.selectedArea && result.selectedArea.imageData && result.selectedArea.imageData !== newSelectedImageData;
             sendResponse({ hasChanged, newImageData: newSelectedImageData });
-        };
-        image.src = newImageData;
+        });
     }
 }

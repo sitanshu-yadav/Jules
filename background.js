@@ -48,7 +48,6 @@ function checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId) {
         }
         chrome.desktopCapture.chooseDesktopMedia(['tab'], (streamId) => {
             if (streamId) {
-                const video = document.createElement('video');
                 navigator.mediaDevices.getUserMedia({
                     video: {
                         mandatory: {
@@ -57,19 +56,20 @@ function checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId) {
                         }
                     }
                 }).then((stream) => {
-                    video.srcObject = stream;
-                    video.onloadedmetadata = () => {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
+                    const track = stream.getVideoTracks()[0];
+                    const imageCapture = new ImageCapture(track);
+                    imageCapture.grabFrame().then((imageBitmap) => {
+                        const canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
                         const context = canvas.getContext('2d');
-                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                        const newImageData = canvas.toDataURL();
+                        context.drawImage(imageBitmap, 0, 0);
+                        const newImageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
 
                         try {
                             chrome.tabs.sendMessage(tabId, {
                                 action: 'compareImages',
-                                newImageData,
+                                newImageData: newImageData.data.buffer,
+                                width: newImageData.width,
+                                height: newImageData.height,
                                 selectedArea,
                                 trackFullPage
                             }, (response) => {
@@ -95,8 +95,11 @@ function checkForChanges(selectedArea, alertPhrase, trackFullPage, tabId) {
                         } catch (error) {
                             console.error(error);
                         }
-                        stream.getTracks().forEach(track => track.stop());
-                    };
+                        track.stop();
+                    }).catch((err) => {
+                        console.error(err);
+                        stopTracking();
+                    });
                 }).catch((err) => {
                     console.error(err);
                     stopTracking();
